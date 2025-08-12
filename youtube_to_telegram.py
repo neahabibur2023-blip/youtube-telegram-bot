@@ -2,66 +2,55 @@ import os
 import requests
 import time
 from flask import Flask
+from threading import Thread
 
-# Flask App setup
+# Flask app for Render keep-alive
 app = Flask(__name__)
 
-# Environment Variables থেকে মান নেওয়া
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
-CHANNEL_ID = os.getenv("CHANNEL_ID")
+@app.route('/')
+def home():
+    return "YouTube → Telegram bot is running!"
 
-# ইউটিউব API দিয়ে নতুন ভিডিও পাওয়ার ফাংশন
+# Environment variables (এখানে সরাসরি সেট করা হয়েছে)
+BOT_TOKEN = "7874904494:AAH-MrzRbbBXPqsR66MT3N6dHTikdrc2L4I"
+CHAT_ID = "5942277435"
+YOUTUBE_API_KEY = "AIzaSyBOLnfr4geGr7rglTtTKVLugn0KaDfNtkE"
+CHANNEL_ID = "UC3GqJxjrfoMcH44hXp8a9gA"
+
+# Get latest YouTube video
 def get_latest_video():
     url = f"https://www.googleapis.com/youtube/v3/search?key={YOUTUBE_API_KEY}&channelId={CHANNEL_ID}&order=date&part=snippet&type=video&maxResults=1"
     response = requests.get(url)
     data = response.json()
-    
+
     if "items" in data and len(data["items"]) > 0:
         latest_video = data["items"][0]
         video_id = latest_video["id"]["videoId"]
         title = latest_video["snippet"]["title"]
-        video_url = f"https://www.youtube.com/watch?v={video_id}"
-        return title, video_url
+        return video_id, title
     return None, None
 
-# Telegram-এ মেসেজ পাঠানোর ফাংশন
-def send_to_telegram(message):
+# Send message to Telegram
+def send_to_telegram(video_id, title):
+    message = f"🎥 New Video Uploaded:\n{title}\nhttps://youtu.be/{video_id}"
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "disable_web_page_preview": False
-    }
+    payload = {"chat_id": CHAT_ID, "text": message}
     requests.post(url, data=payload)
 
-# Background checker ফাংশন
-def run_checker():
-    last_video = None
+# Background worker
+def background_worker():
+    last_video_id = None
     while True:
         try:
-            title, video_url = get_latest_video()
-            if title and video_url and video_url != last_video:
-                send_to_telegram(f"📢 New video uploaded: {title}\n{video_url}")
-                last_video = video_url
-            time.sleep(300)  # প্রতি 5 মিনিটে চেক করবে
+            video_id, title = get_latest_video()
+            if video_id and video_id != last_video_id:
+                send_to_telegram(video_id, title)
+                last_video_id = video_id
         except Exception as e:
-            print(f"Error: {e}")
-            time.sleep(60)
+            print("Error:", e)
+        time.sleep(300)  # প্রতি ৫ মিনিটে চেক করবে
 
-# Flask default route
-@app.route('/')
-def home():
-    return "YouTube to Telegram Bot is Running!"
-
+# Start background worker in thread
 if __name__ == "__main__":
-    # Render-এর PORT variable ব্যবহার করা
-    PORT = int(os.getenv("PORT", 8080))
-    
-    # Background task চালানো
-    import threading
-    threading.Thread(target=run_checker, daemon=True).start()
-    
-    # Flask সার্ভার চালানো
-    app.run(host='0.0.0.0', port=PORT)
+    Thread(target=background_worker, daemon=True).start()
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
